@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="CSS/style.css">
+    <link rel="icon" type="image/png" href="../IMG/favicon.png">
+    <title>Enterprise WG's</title>
+</head>
+
+<body>
+    <header class="header">
+        <h1>Seja bem-vindo(a)!</h1>
+        <div id="userStatus"
+            style="margin-top: 10px; font-size: 0.95rem; color: #444; display: none; justify-content: center; align-items: center; gap: 12px;">
+            <span id="userInfo"></span>
+            <button id="btnLogout"
+                style="padding: 8px 12px; border-radius: 8px; border: none; background: #ff4f4f; color: #fff; cursor: pointer;">Sair</button>
+        </div>
+    </header>
+
+
+    <div id="loginOverlay"
+        style="position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; justify-content: center; align-items: center; z-index: 999;">
+        <div
+            style="background: rgba(0,0,0,0.85); padding: 30px; border-radius: 15px; width: 340px; max-width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.7);">
+            <h3 id="authTitle" style="color: #00f529; text-align: center; margin-bottom: 20px;">Acesse o sistema</h3>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginMatricula">Matrícula:</label>
+                    <input type="text" id="loginMatricula" placeholder="Ex: 12345" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginSenha">Senha:</label>
+                    <input type="password" id="loginSenha" placeholder="Sua senha" required>
+                </div>
+                <button type="submit" class="btn-primary">Entrar</button>
+                <div id="loginError" style="margin-top: 12px; color: #ff6b6b; font-size: 0.9rem; display: none;"></div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <a href="#" id="showRegisterLink" class="form-toggle-link">Não tem uma conta? Cadastre-se!</a>
+                </div>
+            </form>
+
+            <form id="registerForm" style="display: none;">
+                <div class="form-group">
+                    <label for="registerNome">Nome Completo:</label>
+                    <input type="text" id="registerNome" placeholder="Ex: João Silva" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerMatricula">Matrícula (Login):</label>
+                    <input type="text" id="registerMatricula" placeholder="Ex: 12345" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerSenha">Senha:</label>
+                    <input type="password" id="registerSenha" placeholder="Sua senha" required>
+                </div>
+                <button type="submit" class="btn-primary">Cadastrar</button>
+                <div id="registerError" style="margin-top: 12px; color: #ff6b6b; font-size: 0.9rem; display: none;">
+                </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <a href="#" id="showLoginLink" class="form-toggle-link">Já tem uma conta? Fazer Login</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="menu-container">
+        <nav class="menu">
+            <ul>
+                <li><a href="#menu" id="btnInicio"><i class="icon">🏠</i> Início</a></li>
+
+
+                <li class="dropdown">
+                    <a href="#produtos"><i class="icon">📦</i> Produtos</a>
+                    <ul class="submenu">
+                        <li><a href="#" id="btnAddProduto">Adicionar produto</a></li>
+                        <li><a href="#" id="btnCategorias">Categorias</a></li>
+                    </ul>
+                </li>
+
+
+                <li><a href="#" id="btnVendas"><i class="icon">🛒</i> Vendas</a></li>
+                <li><a href="#" id="btnHistorico"><i class="icon">📜</i> Histórico</a></li>
+
+
+                <li class="dropdown">
+                    <a href="#estoque"><i class="icon">📊</i> Estoque</a>
+                    <ul class="submenu">
+                        <li><a href="#" id="btnVerEstoque">Relatório de estoque</a></li>
+                    </ul>
+                </li>
+
+
+                <li class="dropdown">
+                    <a href="#gerenciamento"><i class="icon">⚙️</i> Gerenciamento</a>
+                    <ul class="submenu">
+                        <li><a href="#usuarios" id="btnUsuarios">Usuários</a></li>
+                        <li><a href="#permissoes" id="btnPermissoes">Permissões</a></li>
+                        <li><a href="#configuracoes">Configurações</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </nav>
+    </div>
+
+
+    <main class="content-area">
+
+
+        <div class="formulario" id="boxInicio" style="display: none;">
+            <h3></h3>
+            <div id="dashboardContent" style="color: white;">
+
+            </div>
+        </div>
+
+
+        <div class="formulario" id="boxProdutos" style="display: none;">
+            <form class="formProdutos" action="" method="get">
+                <h3>Cadastro de Produtos</h3>
+
+                <div class="form-group">
+                    <label for="nomeProduto">Nome:</label>
+                    <input type="text" id="nomeProduto" class="nomeProduto" placeholder="Ex: Cadeira de Escritório"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="categoriaProduto">Categoria:</label>
+                    <select id="categoriaProduto" class="categoriaProduto"
+                        style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.05); color: #fff; outline: none; transition: all 0.3s ease;"
+                        required>
+                        <option value="" disabled selected style="color: black;">Selecione uma categoria</option>
+                        <option value="Vestuário" style="color: black;">Vestuário</option>
+                        <option value="Eletrônicos" style="color: black;">Eletrônicos</option>
+                        <option value="Calçados" style="color: black;">Calçados</option>
+                        <option value="Outros" style="color: black;">Outros</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="quantidadeProduto">Quantidade:</label>
+                    <input type="number" id="quantidadeProduto" class="quantidadeProduto" min="1" placeholder="Ex: 50"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="valorProduto">Valor Total de Compra (R$):</label>
+                    <input type="number" id="valorProduto" class="valorProduto" step="0.01" min="0.01"
+                        placeholder="Compra Lote / Total" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="valorVendaProduto">Valor Unitário de Venda (R$):</label>
+                    <input type="number" id="valorVendaProduto" class="valorVendaProduto" step="0.01" min="0.01"
+                        placeholder="Venda por Unidade" required>
+                </div>
+
+                <button type="submit" class="btn-primary">Adicionar produto ao Estoque</button>
+            </form>
+
+            <div class="resultado"></div>
+        </div>
+
+
+        <div class="formulario" id="boxVendas" style="display: none;">
+            <form class="formSaida" action="" method="get">
+                <h3>Registrar Venda</h3>
+
+                <div class="form-group">
+                    <label for="selectProdutoVenda">Produto a ser vendido:</label>
+                    <select id="selectProdutoVenda" class="selectProdutoVenda"
+                        style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.05); color: #fff; outline: none;"
+                        required>
+                        <option value="" disabled selected style="color: black;">Selecione um produto</option>
+
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="quantidadeVenda">Quantidade:</label>
+                    <input type="number" id="quantidadeVenda" class="quantidadeVenda" min="1" placeholder="Ex: 2"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="descontoVenda">Desconto (%):</label>
+                    <input type="number" id="descontoVenda" class="descontoVenda" min="0" max="100" step="0.01"
+                        placeholder="Ex: 10">
+                </div>
+
+                <div class="form-group">
+                    <label for="vendedorVenda">Nome do Vendedor:</label>
+                    <input type="text" id="vendedorVenda" class="vendedorVenda" placeholder="Ex: João Silva" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="matriculaVendedor">Matrícula do Vendedor:</label>
+                    <input type="text" id="matriculaVendedor" class="matriculaVendedor" placeholder="Ex: 12345"
+                        required>
+                </div>
+
+                <button type="submit" class="btn-primary" style="background-color: #ffaa00;">Efetuar Venda</button>
+            </form>
+
+            <div class="resultadoVenda"></div>
+        </div>
+
+
+        <div class="formulario" id="boxVerEstoque" style="display: none; max-width: 800px;">
+            <h3>Estoque Atual de Produtos</h3>
+            <div id="listaEstoque" style="width: 100%; color: white; overflow-x: auto;"></div>
+        </div>
+
+
+        <div class="formulario" id="boxCategorias" style="display: none; max-width: 800px;">
+            <h3>Produtos por Categoria</h3>
+            <div id="listaCategorias" style="width: 100%; color: white; overflow-x: auto;"></div>
+        </div>
+
+
+        <div class="formulario" id="boxSaidaEstoque" style="display: none; max-width: 800px;">
+            <h3>Histórico de Saídas (Vendas)</h3>
+            <div id="historicoVendas" style="width: 100%; color: white; overflow-x: auto;"></div>
+        </div>
+
+
+        <div class="formulario" id="boxGerenciamento" style="display: none; max-width: 800px;">
+            <h3>Gerenciamento de Usuários</h3>
+            <button id="btnAddUsuario"
+                style="margin-bottom: 20px; padding: 10px 15px; background: #00f529; color: #000; border: none; border-radius: 8px; cursor: pointer;">Adicionar
+                Usuário</button>
+            <div id="listaUsuarios" style="width: 100%; color: white; overflow-x: auto;"></div>
+        </div>
+
+
+        <div class="formulario" id="boxPermissoes" style="display: none; max-width: 600px;">
+            <h3>Permissões e Segurança</h3>
+            <div id="permissoesConteudo" style="width: 100%; color: white; overflow-x: auto;"></div>
+        </div>
+
+    </main>
+
+    <script src="JS/script_1.js"></script>
+</body>
+
+</html>
