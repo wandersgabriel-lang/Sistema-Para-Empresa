@@ -1,11 +1,8 @@
-// ==========================================
-// MÓDULO DE GASTOS
-// ==========================================
+
 function initModuloGastos() {
     const formGasto = document.querySelector('.formGastos');
     const resultadoGasto = document.querySelector('.resultadoGasto');
 
-    // Função auxiliar de formatação BRL
     const formatarMoeda = (valor) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
     function recebeEventoFormGasto(evento) {
@@ -21,7 +18,6 @@ function initModuloGastos() {
             return;
         }
 
-        // SALVA DADOS NO STATE CONFIGURADO NO SCRIPT_1 E PERSISTE
         EmpresaData.gastos.push({
             id: Date.now(),
             prejuizos: prejuizos,
@@ -29,10 +25,8 @@ function initModuloGastos() {
             descontos: descontos
         });
 
-        // Chamada da função global (criada no script_1.js)
         salvarBancoDeDados();
 
-        // CALCULOS TOTAIS (Usando || 0 para evitar erro de NaN se o array estiver vazio)
         const financeiroInvestimento = EmpresaData.financeiro.investimento || 0;
         const financeiroPrejuizo = EmpresaData.financeiro.prejuizo || 0;
 
@@ -40,7 +34,6 @@ function initModuloGastos() {
         const totalPrejuizos = prejuizos + descontos + financeiroPrejuizo;
         const balancoParcial = totalInvestimentos - totalPrejuizos;
 
-        // Feedback de Status Financeiro
         let statusFinanceiro = '';
         if (totalPrejuizos > totalInvestimentos) {
             statusFinanceiro = `<p class="msg-erro">⚠️ Alerta Vermelho! As Perdas Locais ultrapassaram os Investimentos.</p>`;
@@ -50,7 +43,6 @@ function initModuloGastos() {
             statusFinanceiro = `<p class="msg-alerta">📉 Balanço Neutro: Ganhos propostos cobrem prejuízos com exatidão.</p>`;
         }
 
-        // Card do Relatório de Custos
         const cardGasto = `
             <div class="card-relatorio">
                 <p><strong>CUSTOS REGISTRADOS COM SUCESSO</strong></p>
@@ -109,11 +101,10 @@ function initModuloGastos() {
 
     formGasto.addEventListener('submit', recebeEventoFormGasto);
 
-    // Renderiza ao carregar a página para quem já tem gastos salvos
     renderHistoricoGastos();
 }
 
-// Inicializar Módulos do Script 2
 document.addEventListener('DOMContentLoaded', () => {
     initModuloGastos();
 });
+

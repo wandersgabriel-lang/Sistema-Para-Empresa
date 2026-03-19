@@ -1,7 +1,6 @@
 
 const dadosSalvos = JSON.parse(localStorage.getItem('SistemaEmpresaData'));
 
-
 const EmpresaData = dadosSalvos || {
     produtos: [],
     gastos: [],
@@ -12,11 +11,9 @@ const EmpresaData = dadosSalvos || {
     }
 };
 
-
 function salvarBancoDeDados() {
     localStorage.setItem('SistemaEmpresaData', JSON.stringify(EmpresaData));
 }
-
 
 const USERS_STORAGE_KEY = 'SistemaEmpresaUsers';
 const SESSION_USER_KEY = 'SistemaEmpresaUserSession';
@@ -80,9 +77,6 @@ function getLoggedSellerInfo() {
         nome: user.nome
     };
 }
-
-
-
 
 function renderListaUsuarios() {
     const listaUsuarios = document.querySelector('#listaUsuarios');
@@ -277,9 +271,6 @@ function cancelarEditUsuario() {
     renderListaUsuarios();
 }
 
-
-
-
 function renderPermissoes() {
     const permissoesConteudo = document.querySelector('#permissoesConteudo');
     if (!permissoesConteudo) return;
@@ -294,7 +285,7 @@ function renderPermissoes() {
         <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ff6b6b; margin-bottom: 20px;">
             <h4 style="color: #ff6b6b; margin-bottom: 10px;">⚠️ Zona de Segurança</h4>
             <p style="color: #fff; margin-bottom: 15px;">Operações sensíveis que afetam o sistema inteiro. Use com cuidado!</p>
-            
+
             <button onclick="limparBancoDados()" style="width: 100%; padding: 15px; background: #ff4f4f; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: all 0.3s ease;">
                 🗑️ LIMPAR BANCO DE DADOS
             </button>
@@ -324,24 +315,17 @@ function limparBancoDados() {
         return;
     }
 
-
     localStorage.removeItem('SistemaEmpresaData');
     localStorage.removeItem(USERS_STORAGE_KEY);
 
-
     alert('✅ Banco de dados foi completamente limpado com sucesso!');
-
 
     logout();
 }
 
-
-
-
 function initModuloProdutos() {
     const form = document.querySelector('.formProdutos');
     const resultado = document.querySelector('.resultado');
-
 
     const formatarMoeda = (valor) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -353,7 +337,6 @@ function initModuloProdutos() {
         const quantidade = Number(form.querySelector('.quantidadeProduto').value);
         const valorLote = Number(form.querySelector('.valorProduto').value);
         const valorVenda = Number(form.querySelector('.valorVendaProduto').value);
-
 
         if (!nome || !categoria || isNaN(quantidade) || isNaN(valorLote) || isNaN(valorVenda)) {
             resultado.innerHTML = `<p class="msg-erro">Preencha todos os campos do produto!</p>`;
@@ -375,11 +358,9 @@ function initModuloProdutos() {
             return;
         }
 
-
         const valorUnidadeCompra = valorLote / quantidade;
         const investimentoProduto = valorLote;
         const lucroBrutoEstimado = (valorVenda * quantidade) - investimentoProduto;
-
 
         const novoProduto = {
             id: Date.now(),
@@ -394,7 +375,6 @@ function initModuloProdutos() {
 
         EmpresaData.produtos.push(novoProduto);
 
-
         EmpresaData.financeiro.investimento = EmpresaData.produtos.reduce((acc, p) => acc + p.valorLote, 0);
         EmpresaData.financeiro.lucro = EmpresaData.produtos.reduce((acc, p) => acc + p.lucroBrutoEstimado, 0);
 
@@ -406,7 +386,6 @@ function initModuloProdutos() {
 
         salvarBancoDeDados();
 
-
         renderizarResumoEstoque();
     }
 
@@ -414,7 +393,6 @@ function initModuloProdutos() {
         resultado.innerHTML = '';
         const totalItens = EmpresaData.produtos.reduce((acc, p) => acc + p.quantidade, 0);
         const ultimoAdicionado = EmpresaData.produtos[EmpresaData.produtos.length - 1];
-
 
         let statusFinanceiro = '';
         if (EmpresaData.financeiro.lucro < 0) {
@@ -425,7 +403,6 @@ function initModuloProdutos() {
             statusFinanceiro = `<p class="msg-sucesso">✅ Estoque operando com Lucratividade Alta!</p>`;
         }
 
-
         const cardProduto = `
             <div class="card-relatorio">
                 <p class="msg-sucesso"><strong>📦 ${ultimoAdicionado.nome}</strong> adicionado com sucesso!</p>
@@ -434,7 +411,6 @@ function initModuloProdutos() {
                 <p>Previsto Lucro neste Lote: ${formatarMoeda(ultimoAdicionado.lucroBrutoEstimado)}</p>
             </div>
         `;
-
 
         const cardEstoque = `
             <div class="card-relatorio">
@@ -450,9 +426,6 @@ function initModuloProdutos() {
 
     form.addEventListener('submit', recebeEventoForm);
 }
-
-
-
 
 function initMenuNavigation() {
 
@@ -489,11 +462,9 @@ function initMenuNavigation() {
         const isVendedor = user && user.role === 'vendedor';
         const isGerente = user && user.role === 'gerente';
 
-
         const liProdutos = document.querySelector('a[href="#produtos"]')?.closest('li');
         const liEstoque = document.querySelector('a[href="#estoque"]')?.closest('li');
         const liGerenciamento = document.querySelector('a[href="#gerenciamento"]')?.closest('li');
-
 
         if (isVendedor) {
 
@@ -503,14 +474,12 @@ function initMenuNavigation() {
                 }
             });
 
-
             if (boxInicio) boxInicio.style.display = 'none';
             if (boxProdutos) boxProdutos.style.display = 'none';
             if (boxVerEstoque) boxVerEstoque.style.display = 'none';
             if (boxCategorias) boxCategorias.style.display = 'none';
             if (boxSaidaEstoque) boxSaidaEstoque.style.display = 'none';
         }
-
 
         if (isGerente) {
             if (btnInicio) btnInicio.style.display = 'inline-block';
@@ -519,14 +488,12 @@ function initMenuNavigation() {
             if (liGerenciamento) liGerenciamento.style.display = 'block';
         }
 
-
         if (!user) {
             if (btnInicio) btnInicio.style.display = 'none';
             if (liProdutos) liProdutos.style.display = 'none';
             if (liEstoque) liEstoque.style.display = 'none';
             if (liGerenciamento) liGerenciamento.style.display = 'none';
         }
-
 
         applySalesFormUserContext();
     }
@@ -551,12 +518,10 @@ function initMenuNavigation() {
         }
     }
 
-
     todosDropdowns.forEach(link => {
         link.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
-
 
             const parentLi = this.parentElement;
             const submenu = parentLi.querySelector('.submenu');
@@ -569,16 +534,13 @@ function initMenuNavigation() {
         });
     });
 
-
     function abrirFormulario(elementoAtivar) {
         const user = getCurrentUser();
         const isVendedor = user && user.role === 'vendedor';
 
-
         if (isVendedor && elementoAtivar !== boxVendas && elementoAtivar !== boxSaidaEstoque) {
             return;
         }
-
 
         if (boxInicio) boxInicio.style.display = 'none';
         if (boxProdutos) boxProdutos.style.display = 'none';
@@ -589,15 +551,12 @@ function initMenuNavigation() {
         if (boxGerenciamento) boxGerenciamento.style.display = 'none';
         if (boxPermissoes) boxPermissoes.style.display = 'none';
 
-
         document.querySelectorAll('.submenu.ativo').forEach(sub => sub.classList.remove('ativo'));
-
 
         if (elementoAtivar) {
             elementoAtivar.style.display = 'flex';
         }
     }
-
 
     if (btnInicio) {
         btnInicio.addEventListener('click', function (e) {
@@ -607,14 +566,12 @@ function initMenuNavigation() {
         });
     }
 
-
     if (btnAddProduto) {
         btnAddProduto.addEventListener('click', function (e) {
             e.preventDefault();
             abrirFormulario(boxProdutos);
         });
     }
-
 
     if (btnVendas) {
         btnVendas.addEventListener('click', function (e) {
@@ -625,7 +582,6 @@ function initMenuNavigation() {
         });
     }
 
-
     if (btnHistorico) {
         btnHistorico.addEventListener('click', function (e) {
             e.preventDefault();
@@ -634,7 +590,6 @@ function initMenuNavigation() {
         });
     }
 
-
     if (btnUsuarios) {
         btnUsuarios.addEventListener('click', function (e) {
             e.preventDefault();
@@ -642,7 +597,6 @@ function initMenuNavigation() {
             abrirFormulario(boxGerenciamento);
         });
     }
-
 
     if (btnPermissoes) {
         btnPermissoes.addEventListener('click', function (e) {
@@ -654,8 +608,6 @@ function initMenuNavigation() {
 
     const btnSaidaEstoque = document.querySelector('#btnSaidaEstoque');
 
-
-
     if (btnVerEstoque) {
         btnVerEstoque.addEventListener('click', function (e) {
             e.preventDefault();
@@ -664,7 +616,6 @@ function initMenuNavigation() {
         });
     }
 
-
     if (btnCategorias) {
         btnCategorias.addEventListener('click', function (e) {
             e.preventDefault();
@@ -672,7 +623,6 @@ function initMenuNavigation() {
             abrirFormulario(boxCategorias);
         });
     }
-
 
     const formSaida = document.querySelector('.formSaida');
     const selectProdutoVenda = document.querySelector('#selectProdutoVenda');
@@ -735,7 +685,6 @@ function initMenuNavigation() {
             historicoVendas.innerHTML = html;
             return;
         }
-
 
         const logsVenda = (user && user.role === 'vendedor')
             ? allLogsVenda.filter(v => v.matricula === user.matricula)
@@ -801,7 +750,6 @@ function initMenuNavigation() {
         historicoVendas.innerHTML = html;
     }
 
-
     function renderDashboard() {
         if (!dashboardContent) return;
 
@@ -811,15 +759,12 @@ function initMenuNavigation() {
             return;
         }
 
-
         const produtosBaixoEstoque = EmpresaData.produtos.filter(p => p.quantidade <= 10);
 
         const logsVenda = EmpresaData.logsVenda || [];
         const hoje = new Date().toDateString();
 
-
         const vendasHoje = logsVenda.filter(log => new Date(log.id).toDateString() === hoje);
-
 
         const produtoVendas = {};
         logsVenda.forEach(log => {
@@ -828,7 +773,6 @@ function initMenuNavigation() {
         });
         const produtosMaisVendidos = Object.entries(produtoVendas).sort((a, b) => b[1] - a[1]).slice(0, 5);
         const produtosMenosVendidos = Object.entries(produtoVendas).sort((a, b) => a[1] - b[1]).slice(0, 5);
-
 
         const vendedorVendas = {};
         logsVenda.forEach(log => {
@@ -839,7 +783,6 @@ function initMenuNavigation() {
         const vendedorTop = Object.entries(vendedorVendas).sort((a, b) => b[1] - a[1])[0];
 
         let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">';
-
 
         if (produtosBaixoEstoque.length > 0) {
             html += `
@@ -854,7 +797,6 @@ function initMenuNavigation() {
             html += '</ul></div>';
         }
 
-
         html += `
             <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #00f529;">
                 <h4 style="color: #00f529; margin-bottom: 10px;">Vendas de Hoje</h4>
@@ -862,7 +804,6 @@ function initMenuNavigation() {
                 <p style="font-size: 1rem; color: #a1a0a0;">Total: R$ ${vendasHoje.reduce((sum, v) => sum + (v.receitaLiquida || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
         `;
-
 
         html += `
             <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ffaa00;">
@@ -874,7 +815,6 @@ function initMenuNavigation() {
         });
         html += '</ul></div>';
 
-
         html += `
             <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ff6b6b;">
                 <h4 style="color: #ff6b6b; margin-bottom: 10px;">Produtos Menos Vendidos</h4>
@@ -884,7 +824,6 @@ function initMenuNavigation() {
             html += `<li style="margin-bottom: 5px; color: #fff;">${produto}: ${qtd} unidades</li>`;
         });
         html += '</ul></div>';
-
 
         if (vendedorTop) {
             html += `
@@ -932,9 +871,7 @@ function initMenuNavigation() {
                 return;
             }
 
-
             produto.quantidade -= qtd;
-
 
             const receitaBruta = produto.valorVenda * qtd;
             const descontoValor = receitaBruta * (descontoPct / 100);
@@ -942,7 +879,6 @@ function initMenuNavigation() {
             const custoTotal = produto.valorUnidadeCompra * qtd;
             const lucroEmpresa = receitaLiquida - custoTotal;
             const comissaoVendedor = receitaLiquida * 0.05;
-
 
             if (!EmpresaData.logsVenda) EmpresaData.logsVenda = [];
 
@@ -963,18 +899,12 @@ function initMenuNavigation() {
 
             EmpresaData.logsVenda.push(log);
 
-
-
-
             salvarBancoDeDados();
-
 
             resultadoVenda.innerHTML = `<p class="msg-sucesso">✅ Venda registrada com sucesso. Vendedor: <strong>${vendedor}</strong> | Receita líquida: R$ ${receitaLiquida.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Lucro: R$ ${lucroEmpresa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Comissão: R$ ${comissaoVendedor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>`;
 
-
             atualizarSelectVendas();
             renderHistoricoVendas();
-
 
             quantidadeVenda.value = '';
             if (descontoVenda) descontoVenda.value = '';
@@ -982,9 +912,7 @@ function initMenuNavigation() {
         });
     }
 
-
     renderHistoricoVendas();
-
 
     function renderTableEstoque() {
         if (!listaEstoque) return;
@@ -1008,7 +936,6 @@ function initMenuNavigation() {
                 <tbody>
         `;
 
-
         EmpresaData.produtos.forEach((p, idx) => {
             html += `
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); transition: background 0.2s;">
@@ -1025,7 +952,6 @@ function initMenuNavigation() {
         listaEstoque.innerHTML = html;
     }
 
-
     function renderCategorias() {
         if (!listaCategorias) return;
 
@@ -1033,7 +959,6 @@ function initMenuNavigation() {
             listaCategorias.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Não há produtos cadastrados nas categorias.</p>';
             return;
         }
-
 
         const categoriasMap = {
             'Vestuário': [],
@@ -1080,9 +1005,6 @@ function initMenuNavigation() {
         listaCategorias.innerHTML = html;
     }
 
-
-
-
     document.addEventListener('click', function (e) {
         if (!e.target.closest('.dropdown')) {
             document.querySelectorAll('.submenu.ativo').forEach(sub => sub.classList.remove('ativo'));
@@ -1090,13 +1012,11 @@ function initMenuNavigation() {
     });
 }
 
-
 document.addEventListener('DOMContentLoaded', () => {
     initAuthentication();
     initModuloProdutos();
     initMenuNavigation();
 });
-
 
 document.addEventListener('click', function (e) {
     if (e.target.id === 'btnAddUsuario') {
@@ -1147,7 +1067,6 @@ function initAuthentication() {
                 logout();
             });
         }
-
 
         initMenuNavigation();
     }
@@ -1253,4 +1172,5 @@ function initAuthentication() {
 
     applyUserUI();
 }
+
 

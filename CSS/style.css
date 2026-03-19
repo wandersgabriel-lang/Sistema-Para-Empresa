@@ -17,7 +17,6 @@ body {
   padding-bottom: 40px;
 }
 
-
 .header {
   padding: 30px 20px 10px;
   text-align: center;
@@ -41,7 +40,6 @@ body {
   color: #000000;
   font-size: 1rem;
 }
-
 
 .menu-container {
   display: flex;
@@ -93,7 +91,6 @@ body {
   font-style: normal;
 }
 
-
 .submenu {
   list-style: none;
   position: absolute;
@@ -110,7 +107,6 @@ body {
   opacity: 0;
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
-
 
 .submenu.ativo {
   display: block;
@@ -135,7 +131,6 @@ body {
 
   color: #00f529;
 }
-
 
 .content-area {
   display: flex;
@@ -181,7 +176,6 @@ body {
   font-size: 1.5rem;
 }
 
-
 .form-group {
   margin-bottom: 15px;
   text-align: left;
@@ -216,7 +210,6 @@ input:focus {
   box-shadow: 0 0 8px rgba(0, 245, 41, 0.3);
 }
 
-
 .btn-primary {
   width: 100%;
   margin-top: 15px;
@@ -240,7 +233,6 @@ input:focus {
   transform: scale(0.98);
 }
 
-
 .resultado,
 .resultadoGasto {
   margin-top: 25px;
@@ -255,7 +247,6 @@ input:focus {
   text-align: left;
   line-height: 1.4;
 }
-
 
 .msg-erro {
   color: #ff4c4c;
