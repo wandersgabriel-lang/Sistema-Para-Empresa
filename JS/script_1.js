@@ -1,9 +1,8 @@
+const SESSION_USER_KEY = 'SistemaEmpresaUserSession';
 
-const dadosSalvos = JSON.parse(localStorage.getItem('SistemaEmpresaData'));
-
-const EmpresaData = dadosSalvos || {
+const EmpresaData = {
     produtos: [],
-    gastos: [],
+    logsVenda: [],
     financeiro: {
         investimento: 0,
         lucro: 0,
@@ -11,34 +10,53 @@ const EmpresaData = dadosSalvos || {
     }
 };
 
-function salvarBancoDeDados() {
-    localStorage.setItem('SistemaEmpresaData', JSON.stringify(EmpresaData));
+let usersCache = [];
+
+function formatarMoeda(valor) {
+    return Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-const USERS_STORAGE_KEY = 'SistemaEmpresaUsers';
-const SESSION_USER_KEY = 'SistemaEmpresaUserSession';
+function recalcularFinanceiro() {
+    const investimento = EmpresaData.produtos.reduce((acc, produto) => acc + Number(produto.valorLote || 0), 0);
+    const lucro = EmpresaData.produtos.reduce((acc, produto) => acc + Number(produto.lucroBrutoEstimado || 0), 0);
 
-const defaultUsers = [
-    { matricula: '0001', senha: '123', nome: 'Gerente', role: 'gerente' },
-    { matricula: '1001', senha: '123', nome: 'Lucas - Vendedor', role: 'vendedor' },
-    { matricula: '1002', senha: '123', nome: 'Maria - Vendedora', role: 'vendedor' }
-];
+    EmpresaData.financeiro = {
+        investimento,
+        lucro,
+        prejuizo: lucro < 0 ? Math.abs(lucro) : 0
+    };
+}
 
-function getSavedUsers() {
-    const raw = localStorage.getItem(USERS_STORAGE_KEY);
+async function apiRequest(path, options = {}) {
+    const response = await fetch(path, {
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        ...options
+    });
+
+    let payload = {};
     try {
-        const parsed = raw ? JSON.parse(raw) : null;
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch (err) {
-        console.warn('Erro ao ler usuários do localStorage', err);
+        payload = await response.json();
+    } catch {
+        payload = {};
     }
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(defaultUsers));
-    return defaultUsers;
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            setCurrentUser(null);
+        }
+        throw new Error(payload.error || 'Erro ao processar a requisição.');
+    }
+
+    return payload;
 }
 
 function getCurrentUser() {
     const raw = sessionStorage.getItem(SESSION_USER_KEY);
     if (!raw) return null;
+
     try {
         return JSON.parse(raw);
     } catch {
@@ -54,28 +72,53 @@ function setCurrentUser(user) {
     }
 }
 
-function logout() {
-    setCurrentUser(null);
-    window.location.reload();
+async function logout() {
+    try {
+        await apiRequest('/api/auth/logout', { method: 'POST' });
+    } catch {
+    } finally {
+        setCurrentUser(null);
+        window.location.reload();
+    }
 }
 
-function isManager() {
-    const user = getCurrentUser();
-    return user && user.role === 'gerente';
+function getSavedUsers() {
+    return usersCache;
 }
 
-function isSeller() {
-    const user = getCurrentUser();
-    return user && user.role === 'vendedor';
+function applyBootstrapData(data) {
+    EmpresaData.produtos = Array.isArray(data.produtos) ? data.produtos : [];
+    EmpresaData.logsVenda = Array.isArray(data.logsVenda) ? data.logsVenda : [];
+    usersCache = Array.isArray(data.users) ? data.users : [];
+    recalcularFinanceiro();
 }
 
-function getLoggedSellerInfo() {
-    const user = getCurrentUser();
-    if (!user) return null;
-    return {
-        matricula: user.matricula,
-        nome: user.nome
-    };
+async function carregarDadosIniciais() {
+    const data = await apiRequest('/api/bootstrap');
+    applyBootstrapData(data);
+}
+
+async function refreshUsers() {
+    const data = await apiRequest('/api/users');
+    usersCache = data.users || [];
+    return usersCache;
+}
+
+async function refreshProdutos() {
+    const data = await apiRequest('/api/produtos');
+    EmpresaData.produtos = data.produtos || [];
+    recalcularFinanceiro();
+    return EmpresaData.produtos;
+}
+
+async function refreshVendas() {
+    const data = await apiRequest('/api/vendas');
+    EmpresaData.logsVenda = data.logsVenda || [];
+    return EmpresaData.logsVenda;
+}
+
+async function refreshAllData() {
+    await carregarDadosIniciais();
 }
 
 function renderListaUsuarios() {
@@ -92,7 +135,7 @@ function renderListaUsuarios() {
     let html = '<table style="width:100%; border-collapse: collapse; text-align: left; margin-top: 15px; background: rgba(0,0,0,0.3); border-radius: 8px;">';
     html += '<thead><tr style="border-bottom: 2px solid #00f529;"><th style="padding: 12px; color: #00f529;">Matrícula</th><th style="padding: 12px; color: #00f529;">Nome</th><th style="padding: 12px; color: #00f529;">Função</th><th style="padding: 12px; color: #00f529;">Status</th><th style="padding: 12px; color: #00f529;">Ações</th></tr></thead><tbody>';
 
-    users.forEach(user => {
+    users.forEach((user) => {
         const statusDisplay = user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Aprovado';
 
         let actionsHtml = `<button onclick="editarUsuario('${user.matricula}')" style="margin-right: 5px; padding: 5px 10px; background: #ffa500; color: #000; border: none; border-radius: 4px; cursor: pointer;">Editar</button>
@@ -108,9 +151,7 @@ function renderListaUsuarios() {
             <td style="padding: 12px; color: #fff;">${user.nome}</td>
             <td style="padding: 12px; color: #fff;">${user.role === 'gerente' ? 'Gerente' : 'Vendedor'}</td>
             <td style="padding: 12px; color: #fff;">${statusDisplay}</td>
-            <td style="padding: 12px;">
-                ${actionsHtml}
-            </td>
+            <td style="padding: 12px;">${actionsHtml}</td>
         </tr>`;
     });
 
@@ -119,6 +160,9 @@ function renderListaUsuarios() {
 }
 
 function adicionarUsuario() {
+    const container = document.querySelector('#listaUsuarios');
+    if (!container) return;
+
     const formHtml = `
         <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; margin-top: 20px;">
             <h4>Adicionar Novo Usuário</h4>
@@ -147,35 +191,32 @@ function adicionarUsuario() {
             </form>
         </div>
     `;
-    document.querySelector('#listaUsuarios').innerHTML += formHtml;
 
-    document.querySelector('#formAddUsuario').addEventListener('submit', function (e) {
+    container.innerHTML += formHtml;
+
+    document.querySelector('#formAddUsuario').addEventListener('submit', async (e) => {
         e.preventDefault();
         const matricula = document.querySelector('#novaMatricula').value.trim();
         const senha = document.querySelector('#novaSenha').value.trim();
         const nome = document.querySelector('#novoNome').value.trim();
         const role = document.querySelector('#novaFuncao').value;
 
-        if (!matricula || !senha || !nome || !role) {
-            alert('Preencha todos os campos.');
-            return;
+        try {
+            await apiRequest('/api/users', {
+                method: 'POST',
+                body: JSON.stringify({ matricula, senha, nome, role, status: 'aprovado' })
+            });
+            await refreshUsers();
+            renderListaUsuarios();
+        } catch (error) {
+            alert(error.message);
         }
-
-        const users = getSavedUsers();
-        if (users.find(u => u.matricula === matricula)) {
-            alert('Matrícula já existe.');
-            return;
-        }
-
-        users.push({ matricula, senha, nome, role });
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-        renderListaUsuarios();
     });
 }
 
 function editarUsuario(matricula) {
     const users = getSavedUsers();
-    const user = users.find(u => u.matricula === matricula);
+    const user = users.find((item) => item.matricula === matricula);
     if (!user) return;
 
     const formHtml = `
@@ -188,7 +229,8 @@ function editarUsuario(matricula) {
                 </div>
                 <div class="form-group">
                     <label for="editSenha">Senha:</label>
-                    <input type="password" id="editSenha" value="${user.senha}" required>
+                    <input type="password" id="editSenha" placeholder="Digite uma nova senha para alterar">
+                    <small style="display: block; margin-top: 6px; color: #a1a0a0;">Deixe em branco para manter a senha atual.</small>
                 </div>
                 <div class="form-group">
                     <label for="editNome">Nome:</label>
@@ -206,61 +248,68 @@ function editarUsuario(matricula) {
             </form>
         </div>
     `;
+
     document.querySelector('#listaUsuarios').innerHTML += formHtml;
 
-    document.querySelector('#formEditUsuario').addEventListener('submit', function (e) {
+    document.querySelector('#formEditUsuario').addEventListener('submit', async (e) => {
         e.preventDefault();
         const senha = document.querySelector('#editSenha').value.trim();
         const nome = document.querySelector('#editNome').value.trim();
         const role = document.querySelector('#editFuncao').value;
 
-        if (!senha || !nome || !role) {
-            alert('Preencha todos os campos.');
-            return;
+        try {
+            await apiRequest(`/api/users/${encodeURIComponent(matricula)}`, {
+                method: 'PUT',
+                body: JSON.stringify({ nome, senha, role, status: user.status || 'aprovado' })
+            });
+            await refreshUsers();
+            renderListaUsuarios();
+        } catch (error) {
+            alert(error.message);
         }
-
-        user.senha = senha;
-        user.nome = nome;
-        user.role = role;
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-        renderListaUsuarios();
     });
 }
 
-function removerUsuario(matricula) {
+async function removerUsuario(matricula) {
     if (!confirm('Tem certeza que deseja remover este usuário?')) return;
 
-    const users = getSavedUsers();
-    const index = users.findIndex(u => u.matricula === matricula);
-    if (index === -1) return;
-
-    users.splice(index, 1);
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-    renderListaUsuarios();
+    try {
+        await apiRequest(`/api/users/${encodeURIComponent(matricula)}`, { method: 'DELETE' });
+        await refreshUsers();
+        renderListaUsuarios();
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
-function aprovarUsuario(matricula) {
+async function aprovarUsuario(matricula) {
     if (!confirm('Tem certeza que deseja aprovar este usuário?')) return;
 
-    const users = getSavedUsers();
-    const user = users.find(u => u.matricula === matricula);
-    if (!user) return;
-
-    user.status = 'aprovado';
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-    renderListaUsuarios();
+    try {
+        await apiRequest(`/api/users/${encodeURIComponent(matricula)}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status: 'aprovado' })
+        });
+        await refreshUsers();
+        renderListaUsuarios();
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
-function reprovarUsuario(matricula) {
+async function reprovarUsuario(matricula) {
     if (!confirm('Tem certeza que deseja reprovar este usuário?')) return;
 
-    const users = getSavedUsers();
-    const user = users.find(u => u.matricula === matricula);
-    if (!user) return;
-
-    user.status = 'reprovado';
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-    renderListaUsuarios();
+    try {
+        await apiRequest(`/api/users/${encodeURIComponent(matricula)}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status: 'reprovado' })
+        });
+        await refreshUsers();
+        renderListaUsuarios();
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
 function cancelarAddUsuario() {
@@ -281,29 +330,51 @@ function renderPermissoes() {
         return;
     }
 
-    let html = `
+    permissoesConteudo.innerHTML = `
         <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ff6b6b; margin-bottom: 20px;">
             <h4 style="color: #ff6b6b; margin-bottom: 10px;">⚠️ Zona de Segurança</h4>
             <p style="color: #fff; margin-bottom: 15px;">Operações sensíveis que afetam o sistema inteiro. Use com cuidado!</p>
-
-            <button onclick="limparBancoDados()" style="width: 100%; padding: 15px; background: #ff4f4f; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: all 0.3s ease;">
+            <button onclick="limparBancoDados()" style="width: 100%; padding: 15px; background: #ff4f4f; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem;">
                 🗑️ LIMPAR BANCO DE DADOS
             </button>
-            <p style="color: #ffa500; margin-top: 10px; font-size: 0.85rem;">⚠️ Aviso: Esta ação é irreversível e removerá TODOS os dados do sistema (produtos, vendas, usuários).</p>
+            <p style="color: #ffa500; margin-top: 10px; font-size: 0.85rem;">⚠️ Aviso: Esta ação é irreversível e removerá TODOS os dados do sistema.</p>
         </div>
     `;
-
-    permissoesConteudo.innerHTML = html;
 }
 
-function limparBancoDados() {
+function renderConfiguracoes() {
+    const configuracoesConteudo = document.querySelector('#configuracoesConteudo');
+    if (!configuracoesConteudo) return;
+
+    const user = getCurrentUser();
+    if (!user || user.role !== 'gerente') {
+        configuracoesConteudo.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Esta página é exclusiva para gerentes.</p>';
+        return;
+    }
+
+    configuracoesConteudo.innerHTML = `
+        <div class="card-relatorio">
+            <p><strong>Resumo do sistema</strong></p>
+            <p>Produtos cadastrados: ${EmpresaData.produtos.length}</p>
+            <p>Usuários cadastrados: ${usersCache.length}</p>
+            <p>Vendas registradas: ${EmpresaData.logsVenda.length}</p>
+        </div>
+        <div class="card-relatorio">
+            <p><strong>Banco de dados atual</strong></p>
+            <p>O sistema agora usa SQLite real via servidor Node.js.</p>
+            <p>As sessões ainda ficam no navegador, mas produtos, usuários e vendas já saem do armazenamento local.</p>
+        </div>
+    `;
+}
+
+async function limparBancoDados() {
     const user = getCurrentUser();
     if (!user || user.role !== 'gerente') {
         alert('Apenas gerentes podem realizar esta ação.');
         return;
     }
 
-    const confirmacao = confirm('⚠️ CONFIRMAÇÃO: Esta ação removerá TODOS os dados do sistema (produtos, vendas, usuários, etc.). Tem certeza?');
+    const confirmacao = confirm('⚠️ CONFIRMAÇÃO: Esta ação removerá TODOS os dados do sistema. Tem certeza?');
     if (!confirmacao) return;
 
     const confirmacao2 = confirm('SEGUNDA CONFIRMAÇÃO: Digite "LIMPAR" na próxima caixa para confirmar permanentemente.');
@@ -315,21 +386,54 @@ function limparBancoDados() {
         return;
     }
 
-    localStorage.removeItem('SistemaEmpresaData');
-    localStorage.removeItem(USERS_STORAGE_KEY);
+    try {
+        await apiRequest('/api/admin/reset', { method: 'POST' });
+        alert('✅ Banco de dados foi reinicializado com sucesso!');
+        logout();
+    } catch (error) {
+        alert(error.message);
+    }
+}
 
-    alert('✅ Banco de dados foi completamente limpado com sucesso!');
+function renderResumoProduto(resultado, ultimoAdicionado) {
+    const totalItens = EmpresaData.produtos.reduce((acc, produto) => acc + Number(produto.quantidade || 0), 0);
+    let statusFinanceiro = '';
 
-    logout();
+    if (EmpresaData.financeiro.lucro < 0) {
+        statusFinanceiro = `<p class="msg-erro">⚠️ Atenção: O estoque está operando com prejuízo estimado!</p>`;
+    } else if (EmpresaData.financeiro.lucro === 0) {
+        statusFinanceiro = `<p class="msg-alerta">Ponto de Equilíbrio Estimado.</p>`;
+    } else {
+        statusFinanceiro = `<p class="msg-sucesso">✅ Estoque operando com Lucratividade Alta!</p>`;
+    }
+
+    const cardProduto = ultimoAdicionado ? `
+        <div class="card-relatorio">
+            <p class="msg-sucesso"><strong>📦 ${ultimoAdicionado.nome}</strong> adicionado com sucesso!</p>
+            <p>Lote de ${ultimoAdicionado.quantidade} unidades adicionadas.</p>
+            <p>Custo Unitário Médio: ${formatarMoeda(ultimoAdicionado.valorUnidadeCompra)}</p>
+            <p>Previsto lucro neste lote: ${formatarMoeda(ultimoAdicionado.lucroBrutoEstimado)}</p>
+        </div>
+    ` : '';
+
+    const cardEstoque = `
+        <div class="card-relatorio">
+            <p><strong>📊 RESUMO GERAL DE ESTOQUE</strong></p>
+            <p>Total de Modelos Cadastrados: ${EmpresaData.produtos.length}</p>
+            <p>Total de Unidades Armazenadas: ${totalItens}</p>
+            <p>Investimento Alocado: ${formatarMoeda(EmpresaData.financeiro.investimento)}</p>
+        </div>
+    `;
+
+    resultado.innerHTML = statusFinanceiro + cardProduto + cardEstoque;
 }
 
 function initModuloProdutos() {
     const form = document.querySelector('.formProdutos');
     const resultado = document.querySelector('.resultado');
+    if (!form || !resultado) return;
 
-    const formatarMoeda = (valor) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-    function recebeEventoForm(evento) {
+    form.addEventListener('submit', async (evento) => {
         evento.preventDefault();
 
         const nome = form.querySelector('.nomeProduto').value.trim();
@@ -338,101 +442,384 @@ function initModuloProdutos() {
         const valorLote = Number(form.querySelector('.valorProduto').value);
         const valorVenda = Number(form.querySelector('.valorVendaProduto').value);
 
-        if (!nome || !categoria || isNaN(quantidade) || isNaN(valorLote) || isNaN(valorVenda)) {
-            resultado.innerHTML = `<p class="msg-erro">Preencha todos os campos do produto!</p>`;
+        if (!nome || !categoria || !Number.isFinite(quantidade) || !Number.isFinite(valorLote) || !Number.isFinite(valorVenda)) {
+            resultado.innerHTML = '<p class="msg-erro">Preencha todos os campos do produto.</p>';
             return;
         }
 
         if (quantidade <= 0 || valorLote <= 0 || valorVenda <= 0) {
-            resultado.innerHTML = `<p class="msg-erro">Os valores e quantidades devem ser maiores que zero!</p>`;
+            resultado.innerHTML = '<p class="msg-erro">Os valores e quantidades devem ser maiores que zero.</p>';
             return;
         }
 
-        if (nome.length < 3 || nome.length > 50) {
-            resultado.innerHTML = `<p class="msg-erro">O nome do produto deve ter entre 3 e 50 caracteres.</p>`;
-            return;
+        try {
+            const data = await apiRequest('/api/produtos', {
+                method: 'POST',
+                body: JSON.stringify({ nome, categoria, quantidade, valorLote, valorVenda })
+            });
+
+            EmpresaData.produtos = data.produtos || [];
+            recalcularFinanceiro();
+            renderResumoProduto(resultado, data.produto);
+            form.reset();
+        } catch (error) {
+            resultado.innerHTML = `<p class="msg-erro">${error.message}</p>`;
         }
+    });
+}
 
-        if (/\d/.test(nome)) {
-            resultado.innerHTML = `<p class="msg-erro">O nome não pode conter números.</p>`;
-            return;
-        }
+function editarProduto(produtoId) {
+    const produto = EmpresaData.produtos.find((item) => Number(item.id) === Number(produtoId));
+    const listaEstoque = document.querySelector('#listaEstoque');
+    if (!produto || !listaEstoque) return;
 
-        const valorUnidadeCompra = valorLote / quantidade;
-        const investimentoProduto = valorLote;
-        const lucroBrutoEstimado = (valorVenda * quantidade) - investimentoProduto;
+    const formHtml = `
+        <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <h4>Editar Produto</h4>
+            <form id="formEditProduto">
+                <div class="form-group">
+                    <label for="editProdutoNome">Nome:</label>
+                    <input type="text" id="editProdutoNome" value="${produto.nome}" required>
+                </div>
+                <div class="form-group">
+                    <label for="editProdutoCategoria">Categoria:</label>
+                    <select id="editProdutoCategoria" required>
+                        <option value="Vestuário" ${produto.categoria === 'Vestuário' ? 'selected' : ''}>Vestuário</option>
+                        <option value="Eletrônicos" ${produto.categoria === 'Eletrônicos' ? 'selected' : ''}>Eletrônicos</option>
+                        <option value="Calçados" ${produto.categoria === 'Calçados' ? 'selected' : ''}>Calçados</option>
+                        <option value="Outros" ${produto.categoria === 'Outros' ? 'selected' : ''}>Outros</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editProdutoQuantidade">Quantidade:</label>
+                    <input type="number" id="editProdutoQuantidade" min="0" value="${produto.quantidade}" required>
+                </div>
+                <div class="form-group">
+                    <label for="editProdutoValorLote">Valor Total de Compra:</label>
+                    <input type="number" id="editProdutoValorLote" min="0.01" step="0.01" value="${produto.valorLote}" required>
+                </div>
+                <div class="form-group">
+                    <label for="editProdutoValorVenda">Valor Unitário de Venda:</label>
+                    <input type="number" id="editProdutoValorVenda" min="0.01" step="0.01" value="${produto.valorVenda}" required>
+                </div>
+                <button type="submit" style="padding: 10px 15px; background: #00f529; color: #000; border: none; border-radius: 8px; cursor: pointer;">Salvar</button>
+                <button type="button" onclick="cancelarEditProduto()" style="margin-left: 10px; padding: 10px 15px; background: #666; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Cancelar</button>
+            </form>
+        </div>
+    `;
 
-        const novoProduto = {
-            id: Date.now(),
-            nome: nome,
-            categoria: categoria,
-            quantidade: quantidade,
-            valorLote: valorLote,
-            valorUnidadeCompra: valorUnidadeCompra,
-            valorVenda: valorVenda,
-            lucroBrutoEstimado: lucroBrutoEstimado
+    listaEstoque.innerHTML += formHtml;
+
+    document.querySelector('#formEditProduto').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const payload = {
+            nome: document.querySelector('#editProdutoNome').value.trim(),
+            categoria: document.querySelector('#editProdutoCategoria').value,
+            quantidade: Number(document.querySelector('#editProdutoQuantidade').value),
+            valorLote: Number(document.querySelector('#editProdutoValorLote').value),
+            valorVenda: Number(document.querySelector('#editProdutoValorVenda').value)
         };
 
-        EmpresaData.produtos.push(novoProduto);
+        try {
+            const data = await apiRequest(`/api/produtos/${produto.id}`, {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            EmpresaData.produtos = data.produtos || [];
+            recalcularFinanceiro();
+            renderTableEstoque();
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+}
 
-        EmpresaData.financeiro.investimento = EmpresaData.produtos.reduce((acc, p) => acc + p.valorLote, 0);
-        EmpresaData.financeiro.lucro = EmpresaData.produtos.reduce((acc, p) => acc + p.lucroBrutoEstimado, 0);
+async function removerProduto(produtoId) {
+    if (!confirm('Tem certeza que deseja remover este produto?')) return;
 
-        if (EmpresaData.financeiro.lucro < 0) {
-            EmpresaData.financeiro.prejuizo = Math.abs(EmpresaData.financeiro.lucro);
-        } else {
-            EmpresaData.financeiro.prejuizo = 0;
+    try {
+        const data = await apiRequest(`/api/produtos/${produtoId}`, {
+            method: 'DELETE'
+        });
+        EmpresaData.produtos = data.produtos || [];
+        recalcularFinanceiro();
+        renderTableEstoque();
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+function cancelarEditProduto() {
+    renderTableEstoque();
+}
+
+function renderHistoricoVendas() {
+    const historicoVendas = document.querySelector('#historicoVendas');
+    if (!historicoVendas) return;
+
+    const user = getCurrentUser();
+    const allLogsVenda = EmpresaData.logsVenda || [];
+
+    if (user && user.role === 'gerente') {
+        if (allLogsVenda.length === 0) {
+            historicoVendas.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Nenhuma saída registrada ainda.</p>';
+            return;
         }
 
-        salvarBancoDeDados();
+        let html = '<h4 style="color:#ffaa00; margin-top:20px; border-bottom:1px solid rgba(255,170,0,0.3); padding-bottom:5px;">Saídas de Estoque (Vendas)</h4>';
 
-        renderizarResumoEstoque();
+        allLogsVenda.forEach((venda) => {
+            const dataStr = new Date(venda.createdAt || venda.id).toLocaleString();
+            html += `
+                <div style="background: rgba(255,255,255,0.05); padding: 14px; margin-top: 10px; border-radius: 8px; border-left: 4px solid #ffaa00;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <small style="color: #a1a0a0;">Data: ${dataStr}</small>
+                        <strong style="color: #fff;">Vendedor: ${venda.vendedor || '—'}</strong>
+                    </div>
+                    <p style="margin: 6px 0; font-size: 0.95rem;">
+                        <strong style="color:#fff">${venda.quantidadeTrancionada}x ${venda.nomeProduto}</strong>
+                    </p>
+                </div>
+            `;
+        });
+
+        historicoVendas.innerHTML = html;
+        return;
     }
 
-    function renderizarResumoEstoque() {
-        resultado.innerHTML = '';
-        const totalItens = EmpresaData.produtos.reduce((acc, p) => acc + p.quantidade, 0);
-        const ultimoAdicionado = EmpresaData.produtos[EmpresaData.produtos.length - 1];
+    const logsVenda = user && user.role === 'vendedor'
+        ? allLogsVenda.filter((venda) => venda.matricula === user.matricula)
+        : allLogsVenda;
 
-        let statusFinanceiro = '';
-        if (EmpresaData.financeiro.lucro < 0) {
-            statusFinanceiro = `<p class="msg-erro">⚠️ Atenção: O estoque está operando com prejuízo estimado!</p>`;
-        } else if (EmpresaData.financeiro.lucro === 0) {
-            statusFinanceiro = `<p class="msg-alerta">Ponto de Equilíbrio Estimado.</p>`;
+    if (logsVenda.length === 0) {
+        historicoVendas.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Ainda não há vendas registradas para este usuário.</p>';
+        return;
+    }
+
+    const hoje = new Date().toDateString();
+    const vendasHoje = logsVenda.filter((venda) => new Date(venda.createdAt || venda.id).toDateString() === hoje);
+    const totalHoje = vendasHoje.reduce((sum, venda) => sum + Number(venda.receitaLiquida || 0), 0);
+
+    let html = `
+        <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #00f529;">
+            <h4 style="color: #00f529; margin-bottom: 6px;">Suas vendas hoje</h4>
+            <p style="margin: 0; color: #fff;">Total de vendas: <strong>${vendasHoje.length}</strong></p>
+            <p style="margin: 4px 0 0; color: #a1a0a0;">Receita líquida: <strong>${formatarMoeda(totalHoje)}</strong></p>
+        </div>
+        <h4 style="color:#ffaa00; margin-top:20px; border-bottom:1px solid rgba(255,170,0,0.3); padding-bottom:5px;">Últimas Vendas Realizadas</h4>
+    `;
+
+    logsVenda.forEach((venda) => {
+        const dataStr = new Date(venda.createdAt || venda.id).toLocaleString();
+        html += `
+            <div style="background: rgba(255,255,255,0.05); padding: 14px; margin-top: 10px; border-radius: 8px; border-left: 4px solid #ffaa00;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <small style="color: #a1a0a0;">Data: ${dataStr}</small>
+                    <strong style="color: #fff;">Vendedor: ${venda.vendedor} (Matr.: ${venda.matricula})</strong>
+                </div>
+                <p style="margin: 6px 0; font-size: 0.95rem;">
+                    <strong style="color:#fff">${venda.quantidadeTrancionada}x ${venda.nomeProduto}</strong>
+                </p>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 6px;">
+                    <span>Receita Bruta: <strong style="color:#00f529">${formatarMoeda(venda.receitaBruta)}</strong></span>
+                    <span>Desconto: <strong style="color:#ff6b6b">${formatarMoeda(venda.descontoValor)} (${Number(venda.descontoPercentual || 0).toFixed(2)}%)</strong></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 4px;">
+                    <span>Receita Líquida: <strong style="color:#00f529">${formatarMoeda(venda.receitaLiquida)}</strong></span>
+                    <span>Lucro Empresa: <strong style="color:#00d623">${formatarMoeda(venda.lucroEmpresa)}</strong></span>
+                </div>
+                <div style="text-align: right; margin-top: 4px; font-size: 0.85rem;">
+                    Comissão: <strong style="color:#ffa500">${formatarMoeda(venda.comissaoVendedor)}</strong>
+                </div>
+            </div>
+        `;
+    });
+
+    historicoVendas.innerHTML = html;
+}
+
+function renderDashboard() {
+    const dashboardContent = document.querySelector('#dashboardContent');
+    if (!dashboardContent) return;
+
+    const user = getCurrentUser();
+    if (user && user.role === 'vendedor') {
+        dashboardContent.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">O dashboard está disponível apenas para gestores.</p>';
+        return;
+    }
+
+    const produtosBaixoEstoque = EmpresaData.produtos.filter((produto) => Number(produto.quantidade) <= 10);
+    const logsVenda = EmpresaData.logsVenda || [];
+    const hoje = new Date().toDateString();
+    const vendasHoje = logsVenda.filter((log) => new Date(log.createdAt || log.id).toDateString() === hoje);
+
+    const produtoVendas = {};
+    logsVenda.forEach((log) => {
+        produtoVendas[log.nomeProduto] = (produtoVendas[log.nomeProduto] || 0) + Number(log.quantidadeTrancionada || 0);
+    });
+
+    const produtosMaisVendidos = Object.entries(produtoVendas).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const produtosMenosVendidos = Object.entries(produtoVendas).sort((a, b) => a[1] - b[1]).slice(0, 5);
+
+    const vendedorVendas = {};
+    logsVenda.forEach((log) => {
+        const chave = `${log.vendedor} (${log.matricula || '—'})`;
+        vendedorVendas[chave] = (vendedorVendas[chave] || 0) + Number(log.receitaLiquida || 0);
+    });
+
+    const vendedorTop = Object.entries(vendedorVendas).sort((a, b) => b[1] - a[1])[0];
+
+    let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">';
+
+    if (produtosBaixoEstoque.length > 0) {
+        html += `
+            <div style="grid-column: 1 / -1; background: rgba(255,0,0,0.1); padding: 20px; border-radius: 8px; border-left: 4px solid #ff0000;">
+                <h4 style="color: #ff0000; margin-bottom: 10px;">⚠️ Alerta de Estoque Baixo</h4>
+                <p style="color: #fff; margin-bottom: 10px;">Os seguintes produtos estão com estoque baixo (10 ou menos unidades):</p>
+                <ul style="list-style: none; padding: 0; color: #fff;">
+                    ${produtosBaixoEstoque.map((produto) => `<li style="margin-bottom: 5px;">${produto.nome}: ${produto.quantidade} unidades restantes</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+
+    html += `
+        <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #00f529;">
+            <h4 style="color: #00f529; margin-bottom: 10px;">Vendas de Hoje</h4>
+            <p style="font-size: 1.2rem; color: #fff;">${vendasHoje.length} vendas realizadas</p>
+            <p style="font-size: 1rem; color: #a1a0a0;">Total: ${formatarMoeda(vendasHoje.reduce((sum, venda) => sum + Number(venda.receitaLiquida || 0), 0))}</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ffaa00;">
+            <h4 style="color: #ffaa00; margin-bottom: 10px;">Produtos Mais Vendidos</h4>
+            <ul style="list-style: none; padding: 0;">
+                ${produtosMaisVendidos.map(([produto, qtd]) => `<li style="margin-bottom: 5px; color: #fff;">${produto}: ${qtd} unidades</li>`).join('') || '<li style="color: #a1a0a0;">Sem vendas registradas.</li>'}
+            </ul>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ff6b6b;">
+            <h4 style="color: #ff6b6b; margin-bottom: 10px;">Produtos Menos Vendidos</h4>
+            <ul style="list-style: none; padding: 0;">
+                ${produtosMenosVendidos.map(([produto, qtd]) => `<li style="margin-bottom: 5px; color: #fff;">${produto}: ${qtd} unidades</li>`).join('') || '<li style="color: #a1a0a0;">Sem vendas registradas.</li>'}
+            </ul>
+        </div>
+    `;
+
+    if (vendedorTop) {
+        html += `
+            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ffa500;">
+                <h4 style="color: #ffa500; margin-bottom: 10px;">Vendedor Destaque</h4>
+                <p style="font-size: 1.1rem; color: #fff;">${vendedorTop[0]}</p>
+                <p style="font-size: 1rem; color: #a1a0a0;">Receita: ${formatarMoeda(vendedorTop[1])}</p>
+            </div>
+        `;
+    }
+
+    html += '</div>';
+    dashboardContent.innerHTML = html;
+}
+
+function renderTableEstoque() {
+    const listaEstoque = document.querySelector('#listaEstoque');
+    if (!listaEstoque) return;
+    const user = getCurrentUser();
+    const canManageProducts = user && user.role === 'gerente';
+
+    if (EmpresaData.produtos.length === 0) {
+        listaEstoque.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">O estoque da empresa está vazio. Cadastre novos produtos primeiro.</p>';
+        return;
+    }
+
+    let html = `
+        <table style="width:100%; border-collapse: collapse; text-align: left; margin-top: 15px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+            <thead>
+                <tr style="border-bottom: 2px solid #00f529;">
+                    <th style="padding: 12px; color: #00f529;">ID</th>
+                    <th style="padding: 12px; color: #00f529;">Categoria</th>
+                    <th style="padding: 12px; color: #00f529;">Produto</th>
+                    <th style="padding: 12px; color: #00f529;">Qtd.</th>
+                    <th style="padding: 12px; color: #00f529;">Preço Venda</th>
+                    ${canManageProducts ? '<th style="padding: 12px; color: #00f529;">Ações</th>' : ''}
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    EmpresaData.produtos.forEach((produto, idx) => {
+        html += `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); transition: background 0.2s;">
+                <td style="padding: 12px; color: #a1a0a0;">#${idx + 1}</td>
+                <td style="padding: 12px;"><span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">${produto.categoria}</span></td>
+                <td style="padding: 12px; font-weight: bold;">${produto.nome}</td>
+                <td style="padding: 12px;">${produto.quantidade} un.</td>
+                <td style="padding: 12px; color: #00f529;">${formatarMoeda(produto.valorVenda)}</td>
+                ${canManageProducts ? `<td style="padding: 12px;">
+                    <button onclick="editarProduto(${produto.id})" style="margin-right: 5px; padding: 5px 10px; background: #ffa500; color: #000; border: none; border-radius: 4px; cursor: pointer;">Editar</button>
+                    <button onclick="removerProduto(${produto.id})" style="padding: 5px 10px; background: #ff4f4f; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Remover</button>
+                </td>` : ''}
+            </tr>
+        `;
+    });
+
+    html += '</tbody></table>';
+    listaEstoque.innerHTML = html;
+}
+
+function renderCategorias() {
+    const listaCategorias = document.querySelector('#listaCategorias');
+    if (!listaCategorias) return;
+
+    if (EmpresaData.produtos.length === 0) {
+        listaCategorias.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Não há produtos cadastrados nas categorias.</p>';
+        return;
+    }
+
+    const categoriasMap = {
+        'Vestuário': [],
+        'Eletrônicos': [],
+        'Calçados': [],
+        'Outros': []
+    };
+
+    EmpresaData.produtos.forEach((produto) => {
+        if (categoriasMap[produto.categoria]) {
+            categoriasMap[produto.categoria].push(produto);
         } else {
-            statusFinanceiro = `<p class="msg-sucesso">✅ Estoque operando com Lucratividade Alta!</p>`;
+            categoriasMap.Outros.push(produto);
         }
+    });
 
-        const cardProduto = `
-            <div class="card-relatorio">
-                <p class="msg-sucesso"><strong>📦 ${ultimoAdicionado.nome}</strong> adicionado com sucesso!</p>
-                <p>Lote de ${ultimoAdicionado.quantidade} unidades adicionadas.</p>
-                <p>Custo Unitário Média: ${formatarMoeda(ultimoAdicionado.valorUnidadeCompra)}</p>
-                <p>Previsto Lucro neste Lote: ${formatarMoeda(ultimoAdicionado.lucroBrutoEstimado)}</p>
-            </div>
-        `;
+    let html = '';
 
-        const cardEstoque = `
-            <div class="card-relatorio">
-                <p><strong>📊 RESUMO GERAL DE ESTOQUE</strong></p>
-                <p>Total de Modelos Cadastrados: ${EmpresaData.produtos.length}</p>
-                <p>Total de Unidades Armazenadas: ${totalItens}</p>
-                <p>Investimento Alocado: ${formatarMoeda(EmpresaData.financeiro.investimento)}</p>
-            </div>
-        `;
+    Object.entries(categoriasMap).forEach(([nomeCategoria, produtos]) => {
+        if (produtos.length === 0) return;
 
-        resultado.innerHTML = statusFinanceiro + cardProduto + cardEstoque;
-    }
+        html += `<h4 style="color: #00d0ff; margin-top: 20px; border-bottom: 1px solid rgba(0, 208, 255, 0.3); padding-bottom: 5px;">📂 ${nomeCategoria} <span style="color:#a1a0a0; font-size:0.8rem;">(${produtos.length} itens)</span></h4>`;
+        html += '<ul style="list-style: none; padding: 0; margin-top: 10px;">';
 
-    form.addEventListener('submit', recebeEventoForm);
+        produtos.forEach((produto) => {
+            html += `
+                <li style="background: rgba(255,255,255,0.05); padding: 10px; margin-bottom: 8px; border-radius: 6px; border-left: 3px solid #00f529; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="color: #fff; display:block;">${produto.nome}</strong>
+                        <small style="color: #a1a0a0;">Estoque: ${produto.quantidade} un.</small>
+                    </div>
+                    <div style="color: #00f529; font-weight:bold;">${formatarMoeda(produto.valorVenda)}</div>
+                </li>
+            `;
+        });
+
+        html += '</ul>';
+    });
+
+    listaCategorias.innerHTML = html || '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Não há produtos classificados.</p>';
 }
 
 function initMenuNavigation() {
-
     if (window.__SistemaEmpresaMenuInit) {
         applyAccessRules();
         return;
     }
+
     window.__SistemaEmpresaMenuInit = true;
 
     const btnInicio = document.querySelector('#btnInicio');
@@ -440,8 +827,10 @@ function initMenuNavigation() {
     const btnVendas = document.querySelector('#btnVendas');
     const btnHistorico = document.querySelector('#btnHistorico');
     const btnVerEstoque = document.querySelector('#btnVerEstoque');
+    const btnCategorias = document.querySelector('#btnCategorias');
     const btnUsuarios = document.querySelector('#btnUsuarios');
     const btnPermissoes = document.querySelector('#btnPermissoes');
+    const btnConfiguracoes = document.querySelector('#btnConfiguracoes');
 
     const boxInicio = document.querySelector('#boxInicio');
     const boxProdutos = document.querySelector('#boxProdutos');
@@ -451,58 +840,54 @@ function initMenuNavigation() {
     const boxSaidaEstoque = document.querySelector('#boxSaidaEstoque');
     const boxGerenciamento = document.querySelector('#boxGerenciamento');
     const boxPermissoes = document.querySelector('#boxPermissoes');
-    const listaEstoque = document.querySelector('#listaEstoque');
-    const listaCategorias = document.querySelector('#listaCategorias');
-    const dashboardContent = document.querySelector('#dashboardContent');
+    const boxConfiguracoes = document.querySelector('#boxConfiguracoes');
 
-    const todosDropdowns = document.querySelectorAll('.dropdown > a');
+    const selectProdutoVenda = document.querySelector('#selectProdutoVenda');
+    const quantidadeVenda = document.querySelector('#quantidadeVenda');
+    const descontoVenda = document.querySelector('#descontoVenda');
+    const vendedorVenda = document.querySelector('#vendedorVenda');
+    const matriculaVendedor = document.querySelector('#matriculaVendedor');
+    const resultadoVenda = document.querySelector('.resultadoVenda');
+    const formSaida = document.querySelector('.formSaida');
+
+    window.applyAccessRules = applyAccessRules;
 
     function applyAccessRules() {
         const user = getCurrentUser();
-        const isVendedor = user && user.role === 'vendedor';
-        const isGerente = user && user.role === 'gerente';
-
+        const liInicio = btnInicio?.closest('li');
         const liProdutos = document.querySelector('a[href="#produtos"]')?.closest('li');
+        const liVendas = btnVendas?.closest('li');
+        const liHistorico = btnHistorico?.closest('li');
         const liEstoque = document.querySelector('a[href="#estoque"]')?.closest('li');
         const liGerenciamento = document.querySelector('a[href="#gerenciamento"]')?.closest('li');
 
-        if (isVendedor) {
-
-            document.querySelectorAll('.menu > ul > li').forEach(li => {
-                if (!li.querySelector('#btnVendas') && !li.querySelector('#btnHistorico')) {
-                    li.remove();
-                }
-            });
-
-            if (boxInicio) boxInicio.style.display = 'none';
-            if (boxProdutos) boxProdutos.style.display = 'none';
-            if (boxVerEstoque) boxVerEstoque.style.display = 'none';
-            if (boxCategorias) boxCategorias.style.display = 'none';
-            if (boxSaidaEstoque) boxSaidaEstoque.style.display = 'none';
-        }
-
-        if (isGerente) {
-            if (btnInicio) btnInicio.style.display = 'inline-block';
-            if (liProdutos) liProdutos.style.display = 'block';
-            if (liEstoque) liEstoque.style.display = 'block';
-            if (liGerenciamento) liGerenciamento.style.display = 'block';
-        }
-
         if (!user) {
-            if (btnInicio) btnInicio.style.display = 'none';
+            [liInicio, liProdutos, liVendas, liHistorico, liEstoque, liGerenciamento].forEach((item) => {
+                if (item) item.style.display = 'none';
+            });
+            return;
+        }
+
+        [liVendas, liHistorico].forEach((item) => {
+            if (item) item.style.display = 'block';
+        });
+
+        if (user.role === 'vendedor') {
+            if (liInicio) liInicio.style.display = 'none';
             if (liProdutos) liProdutos.style.display = 'none';
             if (liEstoque) liEstoque.style.display = 'none';
             if (liGerenciamento) liGerenciamento.style.display = 'none';
+        } else {
+            [liInicio, liProdutos, liEstoque, liGerenciamento].forEach((item) => {
+                if (item) item.style.display = 'block';
+            });
         }
 
         applySalesFormUserContext();
     }
 
     function applySalesFormUserContext() {
-        const vendedorVenda = document.querySelector('#vendedorVenda');
-        const matriculaVendedor = document.querySelector('#matriculaVendedor');
         const user = getCurrentUser();
-
         if (!vendedorVenda || !matriculaVendedor) return;
 
         if (user && user.role === 'vendedor') {
@@ -518,21 +903,21 @@ function initMenuNavigation() {
         }
     }
 
-    todosDropdowns.forEach(link => {
-        link.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+    function atualizarSelectVendas() {
+        if (!selectProdutoVenda) return;
 
-            const parentLi = this.parentElement;
-            const submenu = parentLi.querySelector('.submenu');
+        selectProdutoVenda.innerHTML = '<option value="" disabled selected style="color: black;">Selecione um produto</option>';
 
-            document.querySelectorAll('.submenu.ativo').forEach(sub => {
-                if (sub !== submenu) sub.classList.remove('ativo');
-            });
+        EmpresaData.produtos.forEach((produto) => {
+            if (Number(produto.quantidade) <= 0) return;
 
-            if (submenu) submenu.classList.toggle('ativo');
+            const option = document.createElement('option');
+            option.value = produto.id;
+            option.style.color = 'black';
+            option.textContent = `${produto.nome} (Disponível: ${produto.quantidade} un.) - ${formatarMoeda(produto.valorVenda)}`;
+            selectProdutoVenda.appendChild(option);
         });
-    });
+    }
 
     function abrirFormulario(elementoAtivar) {
         const user = getCurrentUser();
@@ -542,40 +927,49 @@ function initMenuNavigation() {
             return;
         }
 
-        if (boxInicio) boxInicio.style.display = 'none';
-        if (boxProdutos) boxProdutos.style.display = 'none';
-        if (boxVendas) boxVendas.style.display = 'none';
-        if (boxVerEstoque) boxVerEstoque.style.display = 'none';
-        if (boxCategorias) boxCategorias.style.display = 'none';
-        if (boxSaidaEstoque) boxSaidaEstoque.style.display = 'none';
-        if (boxGerenciamento) boxGerenciamento.style.display = 'none';
-        if (boxPermissoes) boxPermissoes.style.display = 'none';
+        [boxInicio, boxProdutos, boxVendas, boxVerEstoque, boxCategorias, boxSaidaEstoque, boxGerenciamento, boxPermissoes, boxConfiguracoes].forEach((box) => {
+            if (box) box.style.display = 'none';
+        });
 
-        document.querySelectorAll('.submenu.ativo').forEach(sub => sub.classList.remove('ativo'));
+        document.querySelectorAll('.submenu.ativo').forEach((submenu) => submenu.classList.remove('ativo'));
 
-        if (elementoAtivar) {
-            elementoAtivar.style.display = 'flex';
-        }
+        if (elementoAtivar) elementoAtivar.style.display = 'flex';
     }
 
-    if (btnInicio) {
-        btnInicio.addEventListener('click', function (e) {
+    document.querySelectorAll('.dropdown > a').forEach((link) => {
+        link.addEventListener('click', (e) => {
             e.preventDefault();
+            e.stopPropagation();
+            const submenu = link.parentElement.querySelector('.submenu');
+
+            document.querySelectorAll('.submenu.ativo').forEach((item) => {
+                if (item !== submenu) item.classList.remove('ativo');
+            });
+
+            if (submenu) submenu.classList.toggle('ativo');
+        });
+    });
+
+    if (btnInicio) {
+        btnInicio.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await refreshAllData();
             renderDashboard();
             abrirFormulario(boxInicio);
         });
     }
 
     if (btnAddProduto) {
-        btnAddProduto.addEventListener('click', function (e) {
+        btnAddProduto.addEventListener('click', (e) => {
             e.preventDefault();
             abrirFormulario(boxProdutos);
         });
     }
 
     if (btnVendas) {
-        btnVendas.addEventListener('click', function (e) {
+        btnVendas.addEventListener('click', async (e) => {
             e.preventDefault();
+            await refreshProdutos();
             atualizarSelectVendas();
             applySalesFormUserContext();
             abrirFormulario(boxVendas);
@@ -583,446 +977,107 @@ function initMenuNavigation() {
     }
 
     if (btnHistorico) {
-        btnHistorico.addEventListener('click', function (e) {
+        btnHistorico.addEventListener('click', async (e) => {
             e.preventDefault();
+            await refreshVendas();
             renderHistoricoVendas();
             abrirFormulario(boxSaidaEstoque);
         });
     }
 
-    if (btnUsuarios) {
-        btnUsuarios.addEventListener('click', function (e) {
-            e.preventDefault();
-            renderListaUsuarios();
-            abrirFormulario(boxGerenciamento);
-        });
-    }
-
-    if (btnPermissoes) {
-        btnPermissoes.addEventListener('click', function (e) {
-            e.preventDefault();
-            renderPermissoes();
-            abrirFormulario(boxPermissoes);
-        });
-    }
-
-    const btnSaidaEstoque = document.querySelector('#btnSaidaEstoque');
-
     if (btnVerEstoque) {
-        btnVerEstoque.addEventListener('click', function (e) {
+        btnVerEstoque.addEventListener('click', async (e) => {
             e.preventDefault();
+            await refreshProdutos();
             renderTableEstoque();
             abrirFormulario(boxVerEstoque);
         });
     }
 
     if (btnCategorias) {
-        btnCategorias.addEventListener('click', function (e) {
+        btnCategorias.addEventListener('click', async (e) => {
             e.preventDefault();
+            await refreshProdutos();
             renderCategorias();
             abrirFormulario(boxCategorias);
         });
     }
 
-    const formSaida = document.querySelector('.formSaida');
-    const selectProdutoVenda = document.querySelector('#selectProdutoVenda');
-    const quantidadeVenda = document.querySelector('#quantidadeVenda');
-    const descontoVenda = document.querySelector('#descontoVenda');
-    const vendedorVenda = document.querySelector('#vendedorVenda');
-    const matriculaVendedor = document.querySelector('#matriculaVendedor');
-    const resultadoVenda = document.querySelector('.resultadoVenda');
-    const historicoVendas = document.querySelector('#historicoVendas');
-
-    function atualizarSelectVendas() {
-        if (!selectProdutoVenda) return;
-        selectProdutoVenda.innerHTML = '<option value="" disabled selected style="color: black;">Selecione um produto</option>';
-
-        EmpresaData.produtos.forEach(p => {
-            if (p.quantidade > 0) {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.style.color = "black";
-                opt.textContent = `${p.nome} (Disponível: ${p.quantidade} un.) - R$ ${p.valorVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                selectProdutoVenda.appendChild(opt);
-            }
+    if (btnUsuarios) {
+        btnUsuarios.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await refreshUsers();
+            renderListaUsuarios();
+            abrirFormulario(boxGerenciamento);
         });
     }
 
-    function renderHistoricoVendas() {
-        if (!historicoVendas) return;
-
-        const user = getCurrentUser();
-        const allLogsVenda = EmpresaData.logsVenda || [];
-
-        if (user && user.role === 'gerente') {
-
-            if (allLogsVenda.length === 0) {
-                historicoVendas.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Nenhuma saída registrada ainda.</p>';
-                return;
-            }
-
-            let html = '<h4 style="color:#ffaa00; margin-top:20px; border-bottom:1px solid rgba(255,170,0,0.3); padding-bottom:5px;">Saídas de Estoque (Vendas)</h4>';
-
-            allLogsVenda.slice().reverse().forEach((v, idx) => {
-                const dataStr = new Date(v.id).toLocaleString();
-                const vendedor = v.vendedor || '—';
-                const produto = v.nomeProduto || '—';
-                const quantidade = v.quantidadeTrancionada || 0;
-
-                html += `
-                    <div style="background: rgba(255,255,255,0.05); padding: 14px; margin-top: 10px; border-radius: 8px; border-left: 4px solid #ffaa00;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <small style="color: #a1a0a0;">Data: ${dataStr}</small>
-                            <strong style="color: #fff;">Vendedor: ${vendedor}</strong>
-                        </div>
-                        <p style="margin: 6px 0; font-size: 0.95rem;">
-                            <strong style="color:#fff">${quantidade}x ${produto}</strong>
-                        </p>
-                    </div>
-                `;
-            });
-
-            historicoVendas.innerHTML = html;
-            return;
-        }
-
-        const logsVenda = (user && user.role === 'vendedor')
-            ? allLogsVenda.filter(v => v.matricula === user.matricula)
-            : allLogsVenda;
-
-        if (logsVenda.length === 0) {
-            historicoVendas.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Ainda não há vendas registradas para este usuário.</p>';
-            return;
-        }
-
-        const hoje = new Date().toDateString();
-        const vendasHoje = logsVenda.filter(v => new Date(v.id).toDateString() === hoje);
-        const totalHoje = vendasHoje.reduce((sum, v) => sum + (v.receitaLiquida || 0), 0);
-
-        let html = `
-            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #00f529;">
-                <h4 style="color: #00f529; margin-bottom: 6px;">Suas vendas hoje</h4>
-                <p style="margin: 0; color: #fff;">Total de vendas: <strong>${vendasHoje.length}</strong></p>
-                <p style="margin: 4px 0 0; color: #a1a0a0;">Receita líquida: <strong>R$ ${totalHoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></p>
-            </div>
-            <h4 style="color:#ffaa00; margin-top:20px; border-bottom:1px solid rgba(255,170,0,0.3); padding-bottom:5px;">Últimas Vendas Realizadas</h4>
-        `;
-
-        logsVenda.slice().reverse().forEach((v, idx) => {
-            const dataStr = new Date(v.id).toLocaleString();
-            const receitaBruta = typeof v.receitaBruta === 'number' ? v.receitaBruta : (typeof v.receitaVenda === 'number' ? v.receitaVenda : 0);
-            const descontoValor = typeof v.descontoValor === 'number' ? v.descontoValor : 0;
-            const descontoPercentual = typeof v.descontoPercentual === 'number' ? v.descontoPercentual : 0;
-            const receitaLiquida = typeof v.receitaLiquida === 'number' ? v.receitaLiquida : receitaBruta - descontoValor;
-            const lucroEmpresa = typeof v.lucroEmpresa === 'number' ? v.lucroEmpresa : 0;
-            const comissaoVendedor = typeof v.comissaoVendedor === 'number' ? v.comissaoVendedor : 0;
-            const vendedor = v.vendedor || '—';
-            const matricula = v.matricula || '—';
-
-            html += `
-                <div style="background: rgba(255,255,255,0.05); padding: 14px; margin-top: 10px; border-radius: 8px; border-left: 4px solid #ffaa00;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <small style="color: #a1a0a0;">Data: ${dataStr}</small>
-                        <strong style="color: #fff;">Vendedor: ${vendedor} (Matr.: ${matricula})</strong>
-                    </div>
-
-                    <p style="margin: 6px 0; font-size: 0.95rem;">
-                        <strong style="color:#fff">${v.quantidadeTrancionada}x ${v.nomeProduto}</strong>
-                    </p>
-
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 6px;">
-                        <span>Receita Bruta: <strong style="color:#00f529">R$ ${receitaBruta.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
-                        <span>Desconto: <strong style="color:#ff6b6b">R$ ${descontoValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${descontoPercentual.toFixed(2)}%)</strong></span>
-                    </div>
-
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 4px;">
-                        <span>Receita Líquida: <strong style="color:#00f529">R$ ${receitaLiquida.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
-                        <span>Lucro Empresa: <strong style="color:#00d623">R$ ${lucroEmpresa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
-                    </div>
-
-                    <div style="text-align: right; margin-top: 4px; font-size: 0.85rem;">
-                        Comissão: <strong style="color:#ffa500">R$ ${comissaoVendedor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    </div>
-                </div>
-            `;
+    if (btnPermissoes) {
+        btnPermissoes.addEventListener('click', (e) => {
+            e.preventDefault();
+            renderPermissoes();
+            abrirFormulario(boxPermissoes);
         });
-
-        historicoVendas.innerHTML = html;
     }
 
-    function renderDashboard() {
-        if (!dashboardContent) return;
-
-        const user = getCurrentUser();
-        if (user && user.role === 'vendedor') {
-            dashboardContent.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">O dashboard está disponível apenas para gestores.</p>';
-            return;
-        }
-
-        const produtosBaixoEstoque = EmpresaData.produtos.filter(p => p.quantidade <= 10);
-
-        const logsVenda = EmpresaData.logsVenda || [];
-        const hoje = new Date().toDateString();
-
-        const vendasHoje = logsVenda.filter(log => new Date(log.id).toDateString() === hoje);
-
-        const produtoVendas = {};
-        logsVenda.forEach(log => {
-            if (!produtoVendas[log.nomeProduto]) produtoVendas[log.nomeProduto] = 0;
-            produtoVendas[log.nomeProduto] += log.quantidadeTrancionada;
+    if (btnConfiguracoes) {
+        btnConfiguracoes.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await refreshAllData();
+            renderConfiguracoes();
+            abrirFormulario(boxConfiguracoes);
         });
-        const produtosMaisVendidos = Object.entries(produtoVendas).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        const produtosMenosVendidos = Object.entries(produtoVendas).sort((a, b) => a[1] - b[1]).slice(0, 5);
-
-        const vendedorVendas = {};
-        logsVenda.forEach(log => {
-            const key = log.vendedor + ' (' + (log.matricula || '—') + ')';
-            if (!vendedorVendas[key]) vendedorVendas[key] = 0;
-            vendedorVendas[key] += log.receitaLiquida || 0;
-        });
-        const vendedorTop = Object.entries(vendedorVendas).sort((a, b) => b[1] - a[1])[0];
-
-        let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">';
-
-        if (produtosBaixoEstoque.length > 0) {
-            html += `
-                <div style="grid-column: 1 / -1; background: rgba(255,0,0,0.1); padding: 20px; border-radius: 8px; border-left: 4px solid #ff0000;">
-                    <h4 style="color: #ff0000; margin-bottom: 10px;">⚠️ Alerta de Estoque Baixo</h4>
-                    <p style="color: #fff; margin-bottom: 10px;">Os seguintes produtos estão com estoque baixo (10 ou menos unidades):</p>
-                    <ul style="list-style: none; padding: 0; color: #fff;">
-            `;
-            produtosBaixoEstoque.forEach(produto => {
-                html += `<li style="margin-bottom: 5px;">${produto.nome}: ${produto.quantidade} unidades restantes</li>`;
-            });
-            html += '</ul></div>';
-        }
-
-        html += `
-            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #00f529;">
-                <h4 style="color: #00f529; margin-bottom: 10px;">Vendas de Hoje</h4>
-                <p style="font-size: 1.2rem; color: #fff;">${vendasHoje.length} vendas realizadas</p>
-                <p style="font-size: 1rem; color: #a1a0a0;">Total: R$ ${vendasHoje.reduce((sum, v) => sum + (v.receitaLiquida || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            </div>
-        `;
-
-        html += `
-            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ffaa00;">
-                <h4 style="color: #ffaa00; margin-bottom: 10px;">Produtos Mais Vendidos</h4>
-                <ul style="list-style: none; padding: 0;">
-        `;
-        produtosMaisVendidos.forEach(([produto, qtd]) => {
-            html += `<li style="margin-bottom: 5px; color: #fff;">${produto}: ${qtd} unidades</li>`;
-        });
-        html += '</ul></div>';
-
-        html += `
-            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ff6b6b;">
-                <h4 style="color: #ff6b6b; margin-bottom: 10px;">Produtos Menos Vendidos</h4>
-                <ul style="list-style: none; padding: 0;">
-        `;
-        produtosMenosVendidos.forEach(([produto, qtd]) => {
-            html += `<li style="margin-bottom: 5px; color: #fff;">${produto}: ${qtd} unidades</li>`;
-        });
-        html += '</ul></div>';
-
-        if (vendedorTop) {
-            html += `
-                <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; border-left: 4px solid #ffa500;">
-                    <h4 style="color: #ffa500; margin-bottom: 10px;">Vendedor Destaque</h4>
-                    <p style="font-size: 1.1rem; color: #fff;">${vendedorTop[0]}</p>
-                    <p style="font-size: 1rem; color: #a1a0a0;">Receita: R$ ${vendedorTop[1].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                </div>
-            `;
-        }
-
-        html += '</div>';
-        dashboardContent.innerHTML = html;
     }
 
     if (formSaida) {
-        formSaida.addEventListener('submit', function (e) {
+        formSaida.addEventListener('submit', async (e) => {
             e.preventDefault();
             resultadoVenda.innerHTML = '';
 
             const produtoId = Number(selectProdutoVenda.value);
             const qtd = Number(quantidadeVenda.value);
             const descontoPct = Number(descontoVenda?.value) || 0;
-
             const currentUser = getCurrentUser();
-            const vendedor = (currentUser && currentUser.role === 'vendedor')
+            const vendedor = currentUser && currentUser.role === 'vendedor'
                 ? currentUser.nome
-                : (vendedorVenda?.value.trim() || '');
-            const matricula = (currentUser && currentUser.role === 'vendedor')
+                : vendedorVenda?.value.trim();
+            const matricula = currentUser && currentUser.role === 'vendedor'
                 ? currentUser.matricula
-                : (matriculaVendedor?.value.trim() || '');
+                : matriculaVendedor?.value.trim();
 
-            if (!produtoId || isNaN(qtd) || qtd <= 0 || isNaN(descontoPct) || descontoPct < 0 || descontoPct > 100 || !vendedor || !matricula) {
-                resultadoVenda.innerHTML = `<p class="msg-erro">Selecione o produto, informe quantidade válida, desconto entre 0% e 100%, nome do vendedor e matrícula.</p>`;
-                return;
-            }
-
-            const produtoIndex = EmpresaData.produtos.findIndex(p => p.id === produtoId);
-            if (produtoIndex === -1) return;
-
-            const produto = EmpresaData.produtos[produtoIndex];
-
-            if (qtd > produto.quantidade) {
-                resultadoVenda.innerHTML = `<p class="msg-erro">Quantidade solicitada (${qtd}) excede o saldo em estoque (${produto.quantidade})!</p>`;
-                return;
-            }
-
-            produto.quantidade -= qtd;
-
-            const receitaBruta = produto.valorVenda * qtd;
-            const descontoValor = receitaBruta * (descontoPct / 100);
-            const receitaLiquida = receitaBruta - descontoValor;
-            const custoTotal = produto.valorUnidadeCompra * qtd;
-            const lucroEmpresa = receitaLiquida - custoTotal;
-            const comissaoVendedor = receitaLiquida * 0.05;
-
-            if (!EmpresaData.logsVenda) EmpresaData.logsVenda = [];
-
-            const log = {
-                id: Date.now(),
-                nomeProduto: produto.nome,
-                quantidadeTrancionada: qtd,
-                vendedor: vendedor,
-                matricula: matricula,
-                descontoPercentual: descontoPct,
-                descontoValor: descontoValor,
-                receitaBruta: receitaBruta,
-                receitaLiquida: receitaLiquida,
-                custoAproximadoTotalVenda: custoTotal,
-                lucroEmpresa: lucroEmpresa,
-                comissaoVendedor: comissaoVendedor
-            };
-
-            EmpresaData.logsVenda.push(log);
-
-            salvarBancoDeDados();
-
-            resultadoVenda.innerHTML = `<p class="msg-sucesso">✅ Venda registrada com sucesso. Vendedor: <strong>${vendedor}</strong> | Receita líquida: R$ ${receitaLiquida.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Lucro: R$ ${lucroEmpresa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Comissão: R$ ${comissaoVendedor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>`;
-
-            atualizarSelectVendas();
-            renderHistoricoVendas();
-
-            quantidadeVenda.value = '';
-            if (descontoVenda) descontoVenda.value = '';
-            if (vendedorVenda) vendedorVenda.value = '';
-        });
-    }
-
-    renderHistoricoVendas();
-
-    function renderTableEstoque() {
-        if (!listaEstoque) return;
-
-        if (EmpresaData.produtos.length === 0) {
-            listaEstoque.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">O estoque da empresa está vazio. Cadastre novos produtos primeiro.</p>';
-            return;
-        }
-
-        let html = `
-            <table style="width:100%; border-collapse: collapse; text-align: left; margin-top: 15px; background: rgba(0,0,0,0.3); border-radius: 8px;">
-                <thead>
-                    <tr style="border-bottom: 2px solid #00f529;">
-                        <th style="padding: 12px; color: #00f529;">ID</th>
-                        <th style="padding: 12px; color: #00f529;">Categoria</th>
-                        <th style="padding: 12px; color: #00f529;">Produto</th>
-                        <th style="padding: 12px; color: #00f529;">Qtd.</th>
-                        <th style="padding: 12px; color: #00f529;">Preço Venda</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        EmpresaData.produtos.forEach((p, idx) => {
-            html += `
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); transition: background 0.2s;">
-                    <td style="padding: 12px; color: #a1a0a0;">#${idx + 1}</td>
-                    <td style="padding: 12px;"><span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">${p.categoria}</span></td>
-                    <td style="padding: 12px; font-weight: bold;">${p.nome}</td>
-                    <td style="padding: 12px;">${p.quantidade} un.</td>
-                    <td style="padding: 12px; color: #00f529;">R$ ${p.valorVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                </tr>
-            `;
-        });
-
-        html += '</tbody></table>';
-        listaEstoque.innerHTML = html;
-    }
-
-    function renderCategorias() {
-        if (!listaCategorias) return;
-
-        if (EmpresaData.produtos.length === 0) {
-            listaCategorias.innerHTML = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Não há produtos cadastrados nas categorias.</p>';
-            return;
-        }
-
-        const categoriasMap = {
-            'Vestuário': [],
-            'Eletrônicos': [],
-            'Calçados': [],
-            'Outros': []
-        };
-
-        EmpresaData.produtos.forEach(p => {
-            if (categoriasMap[p.categoria]) {
-                categoriasMap[p.categoria].push(p);
-            } else {
-                categoriasMap['Outros'].push(p);
-            }
-        });
-
-        let html = '';
-
-        for (const [catName, prods] of Object.entries(categoriasMap)) {
-            if (prods.length > 0) {
-                html += `<h4 style="color: #00d0ff; margin-top: 20px; border-bottom: 1px solid rgba(0, 208, 255, 0.3); padding-bottom: 5px;">📂 ${catName} <span style="color:#a1a0a0; font-size:0.8rem;">(${prods.length} itens)</span></h4>`;
-                html += `<ul style="list-style: none; padding: 0; margin-top: 10px;">`;
-                prods.forEach(p => {
-                    html += `
-                        <li style="background: rgba(255,255,255,0.05); padding: 10px; margin-bottom: 8px; border-radius: 6px; border-left: 3px solid #00f529; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <strong style="color: #fff; display:block;">${p.nome}</strong>
-                                <small style="color: #a1a0a0;">Estoque: ${p.quantidade} un.</small>
-                            </div>
-                            <div style="color: #00f529; font-weight:bold;">
-                                R$ ${p.valorVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                        </li>
-                    `;
+            try {
+                await apiRequest('/api/vendas', {
+                    method: 'POST',
+                    body: JSON.stringify({ produtoId, quantidade: qtd, descontoPercentual: descontoPct, vendedor, matricula })
                 });
-                html += `</ul>`;
+
+                await refreshAllData();
+                atualizarSelectVendas();
+                renderHistoricoVendas();
+
+                const vendaResumo = EmpresaData.logsVenda[0];
+                resultadoVenda.innerHTML = `<p class="msg-sucesso">✅ Venda registrada com sucesso. Vendedor: <strong>${vendaResumo.vendedor}</strong> | Receita líquida: ${formatarMoeda(vendaResumo.receitaLiquida)} | Lucro: ${formatarMoeda(vendaResumo.lucroEmpresa)} | Comissão: ${formatarMoeda(vendaResumo.comissaoVendedor)}</p>`;
+
+                quantidadeVenda.value = '';
+                if (descontoVenda) descontoVenda.value = '';
+                if (!currentUser || currentUser.role !== 'vendedor') {
+                    vendedorVenda.value = '';
+                    matriculaVendedor.value = '';
+                }
+            } catch (error) {
+                resultadoVenda.innerHTML = `<p class="msg-erro">${error.message}</p>`;
             }
-        }
-
-        if (html === '') {
-            html = '<p style="text-align: center; color: #a1a0a0; padding: 20px;">Não há produtos classificados.</p>';
-        }
-
-        listaCategorias.innerHTML = html;
+        });
     }
 
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', (e) => {
         if (!e.target.closest('.dropdown')) {
-            document.querySelectorAll('.submenu.ativo').forEach(sub => sub.classList.remove('ativo'));
+            document.querySelectorAll('.submenu.ativo').forEach((submenu) => submenu.classList.remove('ativo'));
         }
     });
+
+    applyAccessRules();
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-    initAuthentication();
-    initModuloProdutos();
-    initMenuNavigation();
-});
-
-document.addEventListener('click', function (e) {
-    if (e.target.id === 'btnAddUsuario') {
-        adicionarUsuario();
-    }
-});
 
 function initAuthentication() {
     const loginOverlay = document.querySelector('#loginOverlay');
@@ -1045,11 +1100,20 @@ function initAuthentication() {
     const userInfo = document.querySelector('#userInfo');
     const btnLogout = document.querySelector('#btnLogout');
 
-    const currentUser = getCurrentUser();
-
-    function applyUserUI() {
+    async function applyUserUI() {
         const logged = getCurrentUser();
+
         if (!logged) {
+            if (loginOverlay) loginOverlay.style.display = 'flex';
+            if (userStatus) userStatus.style.display = 'none';
+            if (window.applyAccessRules) window.applyAccessRules();
+            return;
+        }
+
+        try {
+            await refreshAllData();
+        } catch (error) {
+            setCurrentUser(null);
             if (loginOverlay) loginOverlay.style.display = 'flex';
             if (userStatus) userStatus.style.display = 'none';
             return;
@@ -1062,56 +1126,38 @@ function initAuthentication() {
         }
 
         if (btnLogout) {
-            btnLogout.addEventListener('click', (e) => {
+            btnLogout.onclick = (e) => {
                 e.preventDefault();
                 logout();
-            });
+            };
         }
 
-        initMenuNavigation();
-    }
-
-    function doLogin(event) {
-        event.preventDefault();
-        const matricula = loginMatricula.value.trim();
-        const senha = loginSenha.value.trim();
-
-        if (!matricula || !senha) {
-            loginError.textContent = 'Informe matrícula e senha.';
-            loginError.style.display = 'block';
-            return;
-        }
-
-        const found = getSavedUsers().find(u => u.matricula === matricula && u.senha === senha);
-        if (!found) {
-            loginError.textContent = 'Matrícula ou senha inválidos.';
-            loginError.style.display = 'block';
-            return;
-        }
-
-        if (found.status === 'pendente') {
-            loginError.textContent = 'Seu cadastro ainda está pendente de aprovação pelo gerente.';
-            loginError.style.display = 'block';
-            return;
-        }
-
-        if (found.status === 'reprovado') {
-            loginError.textContent = 'Sentimos muito, mas não será possível prosseguir, quem sabe em uma próxima oportunidade';
-            loginError.style.display = 'block';
-            return;
-        }
-
-        alert('Seja bem vindo ao time');
-
-        setCurrentUser(found);
-        loginError.style.display = 'none';
-        loginMatricula.value = '';
-        loginSenha.value = '';
-        applyUserUI();
+        if (window.applyAccessRules) window.applyAccessRules();
     }
 
     if (loginForm) {
-        loginForm.addEventListener('submit', doLogin);
+        loginForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            loginError.style.display = 'none';
+
+            try {
+                const data = await apiRequest('/api/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        matricula: loginMatricula.value.trim(),
+                        senha: loginSenha.value.trim()
+                    })
+                });
+
+                setCurrentUser(data.user);
+                loginMatricula.value = '';
+                loginSenha.value = '';
+                await applyUserUI();
+            } catch (error) {
+                loginError.textContent = error.message;
+                loginError.style.display = 'block';
+            }
+        });
     }
 
     if (showRegisterLink) {
@@ -1134,43 +1180,50 @@ function initAuthentication() {
         });
     }
 
-    function doRegister(event) {
-        event.preventDefault();
-        const nome = registerNome.value.trim();
-        const matricula = registerMatricula.value.trim();
-        const senha = registerSenha.value.trim();
-
-        if (!nome || !matricula || !senha) {
-            registerError.textContent = 'Preencha todos os campos.';
-            registerError.style.display = 'block';
-            return;
-        }
-
-        const currentUsers = getSavedUsers();
-        if (currentUsers.find(u => u.matricula === matricula)) {
-            registerError.textContent = 'Matrícula já está em uso.';
-            registerError.style.display = 'block';
-            return;
-        }
-
-        const newUser = { matricula, senha, nome, role: 'vendedor', status: 'pendente' };
-        currentUsers.push(newUser);
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(currentUsers));
-
-        registerError.style.display = 'none';
-        registerNome.value = '';
-        registerMatricula.value = '';
-        registerSenha.value = '';
-
-        alert('Cadastro realizado com sucesso. Seu acesso está pendente de aprovação.');
-        showLoginLink.click();
-    }
-
     if (registerForm) {
-        registerForm.addEventListener('submit', doRegister);
+        registerForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            registerError.style.display = 'none';
+
+            try {
+                await apiRequest('/api/auth/register', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        nome: registerNome.value.trim(),
+                        matricula: registerMatricula.value.trim(),
+                        senha: registerSenha.value.trim()
+                    })
+                });
+
+                registerNome.value = '';
+                registerMatricula.value = '';
+                registerSenha.value = '';
+                alert('Cadastro realizado com sucesso. Seu acesso está pendente de aprovação.');
+                showLoginLink.click();
+            } catch (error) {
+                registerError.textContent = error.message;
+                registerError.style.display = 'block';
+            }
+        });
     }
 
-    applyUserUI();
+    return applyUserUI();
 }
 
+window.adicionarUsuario = adicionarUsuario;
+window.editarUsuario = editarUsuario;
+window.removerUsuario = removerUsuario;
+window.aprovarUsuario = aprovarUsuario;
+window.reprovarUsuario = reprovarUsuario;
+window.cancelarAddUsuario = cancelarAddUsuario;
+window.cancelarEditUsuario = cancelarEditUsuario;
+window.editarProduto = editarProduto;
+window.removerProduto = removerProduto;
+window.cancelarEditProduto = cancelarEditProduto;
+window.limparBancoDados = limparBancoDados;
 
+document.addEventListener('DOMContentLoaded', async () => {
+    initModuloProdutos();
+    initMenuNavigation();
+    await initAuthentication();
+});
